@@ -378,7 +378,7 @@ for (i in beg:end){
 	rownames(tempFac) <- G2
 	eval(parse(text = paste('write.table(', paste('tempFac,file ="./',i,'/G2_model/all/G2_FacData.tab",row.names=TRUE,col.names=TRUE,quote=FALSE,sep="\t",append=FALSE)', sep = ""))))
 	
-	#  query the full model with T samples
+	# query the full model with G2 samples
 	string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/G2_model/all/G2_FacData.tab',sep=""))
 	G2_G2model_mlogliks <- as.numeric(substring(string[-1],14))
 	##########################################################################
