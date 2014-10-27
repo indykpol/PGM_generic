@@ -7,7 +7,6 @@ end <- as.numeric(args[2]) # last consequitve ID to process
 
 # data <- args[1]
 load("./essentials_aggressive.RData") # data to work on
-library(Brobdingnag) # for handling small likelihoods in posterior prob. calc.
 
 G1_template <- G1
 G2_template <- G2

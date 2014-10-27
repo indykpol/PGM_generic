@@ -68,3 +68,87 @@ for (i in 1:length(selected_ML)) {
 	performances_MLfound[i,6] <- auc(predictor=c(as.double(prod_loglik_G1_G1 / (prod_loglik_G1_G1+prod_loglik_G1_G2)),as.double(prod_loglik_G2_G1 / (prod_loglik_G2_G1+prod_loglik_G2_G2))),response=c(rep("Pos",length(G1)),rep("Neg",length(G2))))
 }
 
+
+
+# read x-val data
+
+Zs <- matrix(nrow=17728,ncol=7)
+mlogliks <- NULL
+for (i in 1:17728) {
+	Zs[i,] <- t(read.table(paste("./",i,".result",sep=""),nrow=1,skip=0))
+	mlogliks[[i]] <- read.table(paste("./",i,".result",sep=""),skip=1,header=TRUE)
+}
+rm(i)
+
+# print top20 genes across folds
+top20_genes_perFold <- matrix(ncol=8,nrow=20)
+for (i in 1:7) top20_genes_perFold[,i+1] <- workingList_BRCA[sort(rank(-Zs[,i]),index.return=TRUE)$ix[1:20]]
+
+# subset and join the top20 x-val logliks
+mlogliks_top20_sorted <- mlogliks[1:20]
+for (fold in 0:6) {
+	index_G1_fold <- (fold*2+1):((fold+1)*2)
+	index_G2_fold <- (fold*8+1+14):((fold+1)*8+14)
+	if (fold == 6) index_G2_fold <- c(index_G2_fold,71)
+	
+	top20i <- sort(rank(-Zs[,fold+1]),index.return=TRUE)$ix[1:20]
+	for (top in 1:length(top20i)) {
+		mlogliks_top20_sorted[[top]][c(index_G1_fold,index_G2_fold),] <- mlogliks[[top20i[top]]][c(index_G1_fold,index_G2_fold),]
+	}
+}
+for (i in 1:20) rownames(mlogliks_top20_sorted[[i]]) <- mlogliks_top20_sorted[[i]][,1]
+
+# calculate performances
+performances_XVal <- matrix(ncol=6,nrow=20)
+colnames(performances_XVal) <- c("sensitivity","specificity","AUC","runningNaiveBayes_sen","runningNaiveBayes_spe","AUC")
+prod_loglik_G1_G2 <- rep(1,length(G1))
+prod_loglik_G1_G1 <- rep(1,length(G1))
+prod_loglik_G2_G2 <- rep(1,length(G2))
+prod_loglik_G2_G1 <- rep(1,length(G2))
+
+for (i in 1:nrow(performances_XVal)) {
+	performances_XVal[i,1] <- length(which(as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G1,2] / (as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G1,2] + as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G1,3]) >= 0.5))/length(G1)
+	performances_XVal[i,2] <- length(which(as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G2,2] / (as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G2,2] + as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G2,3]) < 0.5))/length(G2)
+	
+	performances_XVal[i,3] <- auc(predictor=as.double(as.brob(exp(1))^-mlogliks_top20_sorted[[i]][,2] / (as.brob(exp(1))^-mlogliks_top20_sorted[[i]][,2] + as.brob(exp(1))^-mlogliks_top20_sorted[[i]][,3])),response=c(rep("Pos",length(G1)),rep("Neg",length(G2))))
+	
+	# naive Bayes combination of results
+	prod_loglik_G1_G1 <- prod_loglik_G1_G1 * as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G1,2]
+	prod_loglik_G1_G2 <- prod_loglik_G1_G2 * as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G1,3]
+	
+	prod_loglik_G2_G2 <- prod_loglik_G2_G2 * as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G2,3]
+	prod_loglik_G2_G1 <- prod_loglik_G2_G1 * as.brob(exp(1))^-mlogliks_top20_sorted[[i]][G2,2]
+	
+	performances_XVal[i,4] <- length(which(as.double(prod_loglik_G1_G1 / (prod_loglik_G1_G1+prod_loglik_G1_G2)) >= 0.5))/length(G1)
+	performances_XVal[i,5] <- length(which(as.double(prod_loglik_G2_G1 / (prod_loglik_G2_G1+prod_loglik_G2_G2)) < 0.5))/length(G2)
+	
+	performances_XVal[i,6] <- auc(predictor=c(as.double(prod_loglik_G1_G1 / (prod_loglik_G1_G1+prod_loglik_G1_G2)),as.double(prod_loglik_G2_G1 / (prod_loglik_G2_G1+prod_loglik_G2_G2))),response=c(rep("Pos",length(G1)),rep("Neg",length(G2))))
+}
+
+
+
+# top 10 expression running logistic regression
+samples <- c(G1,G2)
+top10_cpm_prediction <- matrix(ncol=11,nrow=length(samples))
+top10_cpm_prediction[,1] <- c(rep("G1",length(G1)),rep("G2",length(G2)))
+top10_cpm_prediction[,2:11] <- t(cpm_BRCA[top10_e,c(G1,G2)])
+colnames(top10_cpm_prediction) <- c("class",paste("G_",1:10,sep=""))
+rownames(top10_cpm_prediction) <- c(G1,G2)
+top10_cpm_prediction <- as.data.frame(top10_cpm_prediction)
+for (i in 1:10) top10_cpm_prediction[,1+i] <- as.numeric.factor(top10_cpm_prediction[,1+i])
+
+performances_binomial_topE <- matrix(ncol=3,nrow=10)
+colnames(performances_binomial_topE) <- c("running_sensitivity","running_specificity","running_AUC")
+
+for (i in 1:10) {
+	# running models
+	predictions_g1 <- vector(length=length(G1))
+	predictions_g2 <- vector(length=length(G2))
+	for (g1 in 1:length(G1)) predictions_g1[g1] <- predict(glm(as.formula(c("class ~ ",paste("G_",1:i,collapse=" + ",sep=""))),data=top10_cpm_prediction[-g1,],family="binomial"),top10_cpm_prediction[G1[g1],],"response")
+	for (g2 in 1:length(G2)) predictions_g2[g2] <- predict(glm(as.formula(c("class ~ ",paste("G_",1:i,collapse=" + ",sep=""))),data=top10_cpm_prediction[-(g2+g1),],family="binomial"),top10_cpm_prediction[G2[g2],],"response")
+	
+	performances_binomial_topE[i,1] <- length(which(predictions_g1 >= 0.5))/length(G1)
+	performances_binomial_topE[i,2] <- length(which(predictions_g2 < 0.5))/length(G2)
+	performances_binomial_topE[i,3] <- auc(predictor=c(predictions_g1,predictions_g2),response=c(rep("Pos",length(G1)),rep("Neg",length(G2))))
+	
+}
