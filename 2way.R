@@ -6,12 +6,16 @@ end <- as.numeric(args[2]) # last consequitve ID to process
 
 # data <- args[1]
 load("./essentials_aggressive.RData") # data to work on
+IDs_length <- nchar(G1[1])+2
+G1 <- G1[1:55]
+G2 <- G2[1:486]
 
 # configure here
 res_pr <- 25 # number of bins for promoter methylation
 res_gb <- 25 # number of bins for gene body methylation
 res_expr <- 25 # number of bins for gene expression
 nruns <- 100 # number of permutations to perform for null distribution calculation
+
 
 smooth_1d <- 1 # should expression node parameterization be smoothed?
 smooth_2d <- 1 # should methylation 2D factors parameterizations be smoothed?
@@ -86,9 +90,9 @@ for (i in beg:end){
 	epsilon_gb_G1 <- 1/(length(G1)*length(IDs_body))/res_gb
 	epsilon_e_G1 <- 1/length(G1)/res_expr
 	
-	smooth_e <- 10/(mean(length(G1),length(G2))/(res_expr*2))
-	smooth_pr <- trunc(10/(mean(length(G1),length(G2))*length(IDs_promoter)/(res_pr*res_expr)))
-	smooth_gb <- trunc(10/(mean(length(G1),length(G2))*length(IDs_body)/(res_gb*res_expr)))
+	smooth_e <- 10/(mean(length(G1),length(G2))/(res_expr*2)) # rules of thumb
+	smooth_pr <- trunc(10/(mean(length(G1),length(G2))*length(IDs_promoter)/(res_pr*res_expr))) # rules of thumb
+	smooth_gb <- trunc(10/(mean(length(G1),length(G2))*length(IDs_body)/(res_gb*res_expr))) # rules of thumb
 	###########################################################
 	############### define the binning scheme  ################
 	all_labels_pr <- as.character(seq(1,res_pr,1))
@@ -186,7 +190,7 @@ for (i in beg:end){
 	tempS_G1 <- matrix(ncol=ncol,nrow=length(G1))
 	for (current_sample in 1:length(G1)) {
 		# expression
-		read_count <- as.numeric(trunc(counts_plusOne[workingList_BRCA[i],G1[current_sample]]))
+		read_count <- trunc(as.numeric(counts_plusOne[workingList_BRCA[i],G1[current_sample]]))
 		lambdas <- breaksEXPRESSION * factors_ls[G1[current_sample]]
 		frequencies_expr <- rep(0,length(breaksEXPRESSION)-1)
 		for (freq in 1:res_expr) {
@@ -279,7 +283,7 @@ for (i in beg:end){
 	
 	# query the full G1 model with G1 samples
 	string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/G1_model/all/G1_FacData.tab',sep=""))
-	G1_G1model_mlogliks <- as.numeric(substring(string[-1],14))
+	G1_G1model_mlogliks <- as.numeric(substring(string[-1],IDs_length))
 	###########################################################################
 	############################## G2 model ###################################
 	### full G2 model developed from here, to obtain likelihoods of G2 #######
@@ -288,7 +292,7 @@ for (i in beg:end){
 	tempS_G2 <- matrix(ncol=ncol,nrow=length(G2))
 	for (current_sample in 1:length(G2)) {
 		# expression
-		read_count <- as.numeric(trunc(counts_plusOne[workingList_BRCA[i],G2[current_sample]]))
+		read_count <- trunc(as.numeric(counts_plusOne[workingList_BRCA[i],G2[current_sample]]))
 		lambdas <- breaksEXPRESSION * factors_ls[G2[current_sample]]
 		frequencies_expr <- rep(0,length(breaksEXPRESSION)-1)
 		for (freq in 1:res_expr) {
@@ -380,7 +384,7 @@ for (i in beg:end){
 	
 	# query the full model with G2 samples
 	string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/G2_model/all/G2_FacData.tab',sep=""))
-	G2_G2model_mlogliks <- as.numeric(substring(string[-1],14))
+	G2_G2model_mlogliks <- as.numeric(substring(string[-1],IDs_length))
 	##########################################################################
 	
 	###########################################################################
@@ -422,7 +426,7 @@ for (i in beg:end){
 	
 	# query the full model with T and AN samples
 	string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/full_model/ -l -n - ./',i,'/full_model/full_VarData.tab ./',i,'/full_model/full_FacData.tab',sep=""))
-	allData_jointModel_mlogliks <- as.numeric(substring(string[-1],14))
+	allData_jointModel_mlogliks <- as.numeric(substring(string[-1],IDs_length))
 	###########################################################################################
 	
 	###########################################################################
@@ -464,7 +468,7 @@ for (i in beg:end){
 		
 		# query
 		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/null/G2_model/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/null/G2_model/G2_FacData.tab',sep=""))
-		G2_G2model_mlogliks <- as.numeric(substring(string[-1],14))
+		G2_G2model_mlogliks <- as.numeric(substring(string[-1],IDs_length))
 		
 		# G1
 		tempFac_G1 <- tempFac[-cur,]
@@ -497,7 +501,7 @@ for (i in beg:end){
 		
 		# query
 		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/null/G1_model/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/null/G1_model/G1_FacData.tab',sep=""))
-		G1_G1model_mlogliks <- as.numeric(substring(string[-1],14))
+		G1_G1model_mlogliks <- as.numeric(substring(string[-1],IDs_length))
 		
 		Ds[run] <- 2*(sum(allData_jointModel_mlogliks) - (sum(G1_G1model_mlogliks)+sum(G2_G2model_mlogliks)))
 	}
