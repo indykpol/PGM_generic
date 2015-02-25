@@ -53,7 +53,7 @@ epsilon_e <- 1/length(samples)/res_expr
 tempS_samples <- matrix(ncol=ncol,nrow=length(samples))
 for (current_sample in 1:length(samples)) {
 	# expression
-	read_count <- trunc(as.numeric(counts_plusOne[workingList_BRCA[i],samples[current_sample]]))
+	read_count <- trunc(as.numeric(counts[workingList_BRCA[i],samples[current_sample]]))
 	lambdas <- breaksEXPRESSION * factors_ls[samples[current_sample]]
 	frequencies_expr <- rep(0,length(breaksEXPRESSION)-1)
 	for (freq in 1:res_expr) {

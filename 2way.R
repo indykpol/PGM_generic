@@ -1,4 +1,4 @@
-# the following objects are expected by this script: workingList_BRCA, mmatrix_pc, counts_plusOne, G1, G2, factors_ls, TSS1500Ind, TSS200Ind, UTR5Ind, EXON1Ind, GENEBODYInd, UTR3Ind
+# the following objects are expected by this script: workingList_BRCA, mmatrix_pc, counts, G1, G2, factors_ls, TSS1500Ind, TSS200Ind, UTR5Ind, EXON1Ind, GENEBODYInd, UTR3Ind
 
 args <- commandArgs(trailingOnly = TRUE)
 beg <- as.numeric(args[1]) # first ID to process
@@ -130,24 +130,29 @@ for (i in beg:end){
 	breaksPROMOTER <- sort(c(-7.01,breaks,7.01))
 	
 	# expression
-	temp <- counts_plusOne[workingList_BRCA[i],c(G2,G1)]
-	temp_cpms <- matrix(ncol=2)
-	colnames(temp_cpms) <- c("cpm","density")
+	temp <- counts[workingList_BRCA[i],c(G2,G1)]
+	tempAN <- matrix(ncol=2)
+	colnames(tempAN) <- c("cpm","density")
 	for (j in 1:length(temp)) {
 		lambda <- as.numeric(temp[j])
-		X <- seq(round(max(lambda-(4*lambda*lambda^(-1/2)),1)),round(lambda+(4*lambda*lambda^(-1/2))))
+		if (lambda > 0) X <- seq(round(max(lambda-(4*lambda*lambda^(-1/2)),0)),round(lambda+(4*lambda*lambda^(-1/2)))) else X <- 0:1
 		current <- factors_ls[c(G2,G1)[j]]
-		temp_cpms <- rbind(temp_cpms,cbind(X/current,dpois(X,lambda=lambda)*current))
+		tempAN <- rbind(tempAN,cbind(X/current,dpois(X,lambda=lambda)))
 	}
-	temp_cpms <- as.data.frame(temp_cpms[-1,],)
-	temp_cpms <- temp_cpms[order(temp_cpms$cpm),]
-	temp_cpms[,3] <- cumsum(temp_cpms[,2])
-	temp_cpms[,3] <- temp_cpms[,3]/max(temp_cpms[,3])
+	tempAN <- as.data.frame(tempAN[-1,],)
+	tempAN <- tempAN[order(tempAN$cpm),]
+	tempAN[,3] <- cumsum(tempAN[,2])
+	if (max(tempAN[,3]) != 0) tempAN[,3] <- tempAN[,3]/max(tempAN[,3])
 	breaks <- NULL
 	noBreaks <- res_expr-1
-	for (j in 1:noBreaks) { breaks <- c (breaks, temp_cpms[which(temp_cpms[,3] >= j*(1/(1+noBreaks))),1][1])}
-	max <- max(counts_plusOne[workingList_BRCA[i],c(G2,G1)])
-	max_boundary <- 20+max+(4*max*max^(-1/2))
+	for (j in 1:noBreaks) { breaks <- c(breaks, tempAN[which(tempAN[,3] >= j*(1/(1+noBreaks))),1][1])}
+	max <- max(temp)
+	if (max > 0) max_boundary <- 20+max+(4*max*max^(-1/2)) else max_boundary <- 20
+	breaks <- unique(breaks)
+	if (length(breaks) == 1) breaks <- seq(max(tempAN[,1]),max_boundary-max(tempAN[,1]),(max_boundary-max(tempAN[,1]))/24) else if (length(breaks) != 24){
+		breaks <- breaks[-which(breaks %in% 0)]
+		breaks <- c(breaks,seq(max(tempAN[,1])+max(breaks),max_boundary-max(tempAN[,1]),(max_boundary-max(tempAN[,1])-max(breaks))/(24-length(breaks))))
+	}
 	breaksEXPRESSION <- c(0,breaks,max_boundary)
 	########################################################
 	# dynamic generation of model specification files here #
@@ -190,7 +195,7 @@ for (i in beg:end){
 	tempS_G1 <- matrix(ncol=ncol,nrow=length(G1))
 	for (current_sample in 1:length(G1)) {
 		# expression
-		read_count <- trunc(as.numeric(counts_plusOne[workingList_BRCA[i],G1[current_sample]]))
+		read_count <- trunc(as.numeric(counts[workingList_BRCA[i],G1[current_sample]]))
 		lambdas <- breaksEXPRESSION * factors_ls[G1[current_sample]]
 		frequencies_expr <- rep(0,length(breaksEXPRESSION)-1)
 		for (freq in 1:res_expr) {
@@ -292,7 +297,7 @@ for (i in beg:end){
 	tempS_G2 <- matrix(ncol=ncol,nrow=length(G2))
 	for (current_sample in 1:length(G2)) {
 		# expression
-		read_count <- trunc(as.numeric(counts_plusOne[workingList_BRCA[i],G2[current_sample]]))
+		read_count <- trunc(as.numeric(counts[workingList_BRCA[i],G2[current_sample]]))
 		lambdas <- breaksEXPRESSION * factors_ls[G2[current_sample]]
 		frequencies_expr <- rep(0,length(breaksEXPRESSION)-1)
 		for (freq in 1:res_expr) {
@@ -505,7 +510,7 @@ for (i in beg:end){
 		
 		Ds[run] <- 2*(sum(allData_jointModel_mlogliks) - (sum(G1_G1model_mlogliks)+sum(G2_G2model_mlogliks)))
 	}
-	if (sd(Ds) != 0) zscore <- (D - mean(Ds)) / sd(Ds) else zscore <- -6
+	if (sd(Ds) != 0 & D > 0.1) zscore <- (D - mean(Ds)) / sd(Ds) else zscore <- -6
 	pval_zscore <- pnorm(zscore,lower.tail=FALSE)
 	###########################################################################################
 	
