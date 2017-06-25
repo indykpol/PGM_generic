@@ -1,26 +1,28 @@
+#!/usr/bin/env Rscript
 #################################################
 #  Evaluate a given dataset with the PINCAGE model
 #################################################
 # Command Line Arguments
+library(optparse)
 option_list <- list(
   make_option(c("-d","--data"), type='character', help = 'cached data to use', default = "data/RData/data_LUSC_all_lazyReady.R_CACHE"),
   make_option(c("-s","--cases"), type='character', help = 'comma-separated list of names of sample groups present in the RData file to test against', default = 'ANs'),
   make_option(c("-c","--controls"), type='character', help = 'optional comma-separated list of names of the other sample groups present in the RData', default = "Ts"),
   make_option(c("-f","--folds"), type='integer', default = "4", help = 'number of folds to split the dataset'),
-  make_option(c("-r","--fraction"), type='integer', default = "NA", help = 'which fraction of the dataset to hold out and learn prior from'),
-  make_option(c("-n","--name"), type='character', help = 'name of the analysis performed', default = "LUSC_Ts_vs_ANs_4foldCV"),
   make_option(c("-p","--parallel"), type='integer', help = 'if desired, provide a number of cores to parallelize the execution of the analysis', default = 1),
   make_option("--smooth_1d", type='logical', default = TRUE, help = 'should expression node parameterization be smoothed?'),
   make_option("--smooth_2d", type='logical', default = TRUE, help = 'should methylation 2D factors parameterizations be smoothed?'),
   make_option("--beginning", type='integer', default = 1, help = 'first numeric ID to process'),
-  make_option("--ending", type='integer', default = 16, help = 'last consequtive ID to process')
+  make_option("--ending", type='integer', default = NA, help = 'last consequtive ID to process'),
+  make_option("--bin", type='character', default = "/home/michal/bin/", help = 'prefix/location of the dfgEval_static binary')
 )
-library(optparse)
 opt <- parse_args(OptionParser(option_list = option_list))
-#opt <- list(data = "../irksome-fibula/data/RData/data_PRAD_progressing_lazyReady.R_CACHE",  folds = 10, fraction = NA, cases = "progressed", controls = "nonProgressed", name = "PRAD_progressing_10foldCV_PINCAGE", parallel = 16, smooth_1d = TRUE, smooth_2d = TRUE, beginning = 1, ending = 16)
+#opt <- list(data = "../irksome-fibula/data/RData/data_PRAD_progressing_lazyReady.R_CACHE",  folds = 10, cases = "progressed", controls = "nonProgressed", parallel = 16, smooth_1d = TRUE, smooth_2d = TRUE, beginning = 1, ending = 16)
 
 if (opt$smooth_1d) library(aws)
 if (opt$smooth_2d) library(smoothie)
+if (is.na(opt$ending)) opt$ending <- opt$beginning
+library(parallel)
 library(methods)
 library(dplyr)
 library(IrksomeModels)
@@ -99,16 +101,16 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 	
 	############################################################
 	######### calculate epsilons and smoothing params ##########
-	epsilon_pr_G2 <- 1/(length(G2)*length(IDs_promoter))/res_pr
-	epsilon_gb_G2 <- 1/(length(G2)*length(IDs_body))/res_gb
-	epsilon_e_G2 <- 1/length(G2)/res_expr
-	epsilon_pr_G1 <- 1/(length(G1)*length(IDs_promoter))/res_pr
-	epsilon_gb_G1 <- 1/(length(G1)*length(IDs_body))/res_gb
-	epsilon_e_G1 <- 1/length(G1)/res_expr
+	epsilon_pr_G2 <- 1/(length(G2_template)*length(IDs_promoter))/res_pr
+	epsilon_gb_G2 <- 1/(length(G2_template)*length(IDs_body))/res_gb
+	epsilon_e_G2 <- 1/length(G2_template)/res_expr
+	epsilon_pr_G1 <- 1/(length(G1_template)*length(IDs_promoter))/res_pr
+	epsilon_gb_G1 <- 1/(length(G1_template)*length(IDs_body))/res_gb
+	epsilon_e_G1 <- 1/length(G1_template)/res_expr
 	
-	smooth_e <- 10/(mean(length(G1),length(G2))/(res_expr*2))
-	smooth_pr <- trunc(10/(mean(length(G1),length(G2))*length(IDs_promoter)/(res_pr*res_expr)))
-	smooth_gb <- trunc(10/(mean(length(G1),length(G2))*length(IDs_body)/(res_gb*res_expr)))
+	smooth_e <- 10/(mean(length(G1_template),length(G2_template))/(res_expr*2))
+	smooth_pr <- trunc(10/(mean(length(G1_template),length(G2_template))*length(IDs_promoter)/(res_pr*res_expr)))
+	smooth_gb <- trunc(10/(mean(length(G1_template),length(G2_template))*length(IDs_body)/(res_gb*res_expr)))
 	########################################################
 	##################### factor graph #####################
 	factorGraph <- file(paste("./",i,"/factorGraph.txt",sep=""),"w")
@@ -315,7 +317,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 		eval(parse(text = paste('write.table(', paste('tempFac,file ="./',i,'/G1_model/all/G1_FacData.tab",row.names=TRUE,col.names=TRUE,quote=FALSE,sep="\t",append=FALSE)', sep = ""))))
 		
 		# query the full G1 model with G1 samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/G1_model/all/G1_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/G1_model/all/G1_FacData.tab',sep=""))
 		G1_G1model_mlogliks_cur <- as.numeric(substring(string[-1],nchars))
 		
 		###########################################################################
@@ -417,7 +419,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 		eval(parse(text = paste('write.table(', paste('tempFac,file ="./',i,'/G2_model/all/G2_FacData.tab",row.names=TRUE,col.names=TRUE,quote=FALSE,sep="\t",append=FALSE)', sep = ""))))
 		
 		# query the full model with G2 samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/G2_model/all/G2_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/G2_model/all/G2_FacData.tab',sep=""))
 		G2_G2model_mlogliks_cur <- as.numeric(substring(string[-1],nchars))
 		
 		###########################################################################
@@ -458,7 +460,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 		eval(parse(text = paste('write.table(', paste('tempFac,file = "./',i,'/full_model/full_FacData.tab",row.names=TRUE,col.names=TRUE,quote=FALSE,sep="\t",append=FALSE)', sep = ""))))
 		
 		# query the full model with T and AN samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/full_model/ -l -n - ./',i,'/full_model/full_VarData.tab ./',i,'/full_model/full_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/full_model/ -l -n - ./',i,'/full_model/full_VarData.tab ./',i,'/full_model/full_FacData.tab',sep=""))
 		allData_jointModel_mlogliks_cur <- as.numeric(substring(string[-1],nchars))
 		###########################################################################
 		######################### D calculation ###################################
@@ -498,7 +500,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 			close(potentials)
 			
 			# query
-			string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/null/G2_model/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/null/G2_model/G2_FacData.tab',sep=""))
+			string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/null/G2_model/ -l -n - ./',i,'/G2_model/all/G2_VarData.tab ./',i,'/null/G2_model/G2_FacData.tab',sep=""))
 			G2_G2model_mlogliks_run <- as.numeric(substring(string[-1],nchars))
 			
 			# G1
@@ -531,7 +533,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 			close(potentials)
 			
 			# query
-			string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/null/G1_model/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/null/G1_model/G1_FacData.tab',sep=""))
+			string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/null/G1_model/ -l -n - ./',i,'/G1_model/all/G1_VarData.tab ./',i,'/null/G1_model/G1_FacData.tab',sep=""))
 			G1_G1model_mlogliks_run <- as.numeric(substring(string[-1],nchars))
 			
 			Ds[run] <- 2*(sum(allData_jointModel_mlogliks_cur) - (sum(G1_G1model_mlogliks_run)+sum(G2_G2model_mlogliks_run)))
@@ -611,10 +613,10 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 		
 		
 		# query the full G1 model with G1 eval samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G1_model/all/G1_eval_VarData.tab ./',i,'/G1_model/all/G1_eval_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G1_model/all/G1_eval_VarData.tab ./',i,'/G1_model/all/G1_eval_FacData.tab',sep=""))
 		G1_G1model_mlogliks[G1_cv_sets[[fold+1]]] <- as.numeric(substring(string[-1],nchars))
 		# query the full G2 model with G1 samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G1_model/all/G1_eval_VarData.tab ./',i,'/G1_model/all/G1_eval_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G1_model/all/G1_eval_VarData.tab ./',i,'/G1_model/all/G1_eval_FacData.tab',sep=""))
 		G1_G2model_mlogliks[G1_cv_sets[[fold+1]]] <- as.numeric(substring(string[-1],nchars))
 		###########################################################################
 		###################### process G2 eval samples ############################
@@ -689,10 +691,10 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 		
 		
 		# query the full G2 model with G2 eval samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_eval_VarData.tab ./',i,'/G2_model/all/G2_eval_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G2_model/all/ -l -n - ./',i,'/G2_model/all/G2_eval_VarData.tab ./',i,'/G2_model/all/G2_eval_FacData.tab',sep=""))
 		G2_G2model_mlogliks[G2_cv_sets[[fold+1]]] <- as.numeric(substring(string[-1],nchars))
 		# query the full G1 model with G2 samples
-		string<-system(intern=TRUE,command=paste('./dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G2_model/all/G2_eval_VarData.tab ./',i,'/G2_model/all/G2_eval_FacData.tab',sep=""))
+		string<-system(intern=TRUE,command=paste(opt$bin, 'dfgEval_static --dfgSpecPrefix=./',i,'/G1_model/all/ -l -n - ./',i,'/G2_model/all/G2_eval_VarData.tab ./',i,'/G2_model/all/G2_eval_FacData.tab',sep=""))
 		G2_G1model_mlogliks[G2_cv_sets[[fold+1]]] <- as.numeric(substring(string[-1],nchars))
 		
 		cat(paste(i,": done fold no. ", fold+1," in ", sprintf("%.2f", (proc.time()[3]-ptm_f)/60)," minutes\n",sep=""))
@@ -703,8 +705,7 @@ out <- mclapply(opt$beginning:opt$ending, mc.cores = opt$parallel, FUN = functio
 	samples_G2model_likelihoods <- c(G1_G2model_mlogliks,G2_G2model_mlogliks)
 	out <- cbind(c(G1_template,G2_template),samples_G1model_likelihoods,samples_G2model_likelihoods)
 	colnames(out) <- c("sample_ID","G1_mloglik","G2_mloglik")
-	eval(parse(text=paste('write.table(x=t(Zs), col.names=FALSE, row.names=FALSE, append=TRUE, file="./',i,'.result")',sep="")))
+	eval(parse(text=paste('write.table(x=t(Zs), col.names=FALSE, row.names=FALSE, append=FALSE, file="./',i,'.result")',sep="")))
 	eval(parse(text=paste('write.table(as.data.frame(out), col.names=TRUE, row.names=FALSE, quote=FALSE, append=TRUE, file="./',i,'.result")',sep="")))
-	
 	cat(paste("done ", opt$folds,"-fold x-val for ",i," in ", sprintf("%.2f", (proc.time()[3]-ptm)/60)," minutes\n",sep=""))
 })
