@@ -11,7 +11,7 @@ option_list <- list(
   make_option(c("-r","--ranks"), type='character', help = "pointer to the RData file with the 'ranks' object with ranking across all folds", default = NA)
 )
 opt <- parse_args(OptionParser(option_list = option_list))
-# opt <- list(parallel=64, top=100, name="BRCA_progressing_IrksomeGenes", g1_length=38, g2_length=43, gene_names="/project/iCancerGenomics/irksome-fibula/data/latestResults/geneNames_BRCA_progression_filtered.RData", name="BRCA_progressing", ranks="/project/iCancerGenomics/irksome-fibula/data/latestResults/ranks_BRCA_progressing_10foldCV.RData")
+# opt <- list(parallel=64, top=100, name="BRCA_progressing", g1_length=38, g2_length=43, gene_names="/project/iCancerGenomics/irksome-fibula/data/latestResults/geneNames_BRCA_progression_filtered.RData", ranks="/project/iCancerGenomics/irksome-fibula/data/latestResults/ranks_BRCA_progressing_10foldCV.RData")
 library(pROC)
 library(parallel)
 library(dplyr)
@@ -66,15 +66,16 @@ for (i in 1:opt$top) {
 	}
 	Likelihoods_combined <- Likelihoods_combined+Likelihoods_single
 	
-	response <-  c(rep(1, opt$g1_length), rep(0, opt$g2_length))
-	auc_top[[i]] <- tryCatch(auc(response = response, predictor = Likelihoods_single[,1]/apply(Likelihoods_single, 1, sum_asLogs))[1], error = function(e) return(NA))
-  auc_top_combined[[i]] <- tryCatch(auc(response = response, predictor = Likelihoods_combined[,1]/apply(Likelihoods_combined, 1, sum_asLogs))[1], error = function(e) return(NA))
+	response <- c(rep(1, opt$g1_length), rep(0, opt$g2_length))
+	auc_top[[i]] <- tryCatch(auc(response = response, predictor = Likelihoods_single[,1] - apply(Likelihoods_single, 1, sum_asLogs))[1], error = function(e) return(NA))
+  auc_top_combined[[i]] <- tryCatch(auc(response = response, predictor = Likelihoods_combined[,1] - apply(Likelihoods_combined, 1, sum_asLogs))[1], error = function(e) return(NA))
 }
 
-IDs <- as.numeric(unlist(lapply(1:length(results_list), FUN = function(x) strsplit(results_list[x],  ".result")[1])))
+IDs <- as.numeric(unlist(lapply(1:length(results_list), FUN = function(x) regmatches(results_list[x], gregexpr("[[:digit:]]+", results_list[x])))))
 top_genes <- ranks[(order(apply(ranks, 1, mean))),]
 top_genes <- head(data.frame(geneID = geneNames[IDs[order(apply(ranks, 1, mean))]], top_genes), n=opt$top)
 
 out_table <- data.frame(top= 1:length(auc_top), auc_top, auc_top_combined, matrix(nrow = length(auc_top), ncol = ncol(Zs), data = unlist(lapply(1:opt$top, FUN=function(x) unlist(lapply(1:ncol(Zs), FUN=function(y) geneNames[IDs[which(ranks[,y]==x)]])))), byrow=TRUE))
 write.table(out_table, file=paste("aucTable_PINCAGE_", opt$name, ".tab", sep=""), quote=FALSE, sep = "\t", row.names = FALSE)
 write.table(top_genes, file=paste("aucTable_PINCAGE_", opt$name, ".tab", sep=""), quote=FALSE, sep = "\t", row.names = FALSE, append=TRUE)
+save(out, opt, file=paste("PINCAGE_out_", opt$name, ".RData", sep=""))
